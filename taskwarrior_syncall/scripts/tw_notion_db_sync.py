@@ -1,4 +1,5 @@
 """Console script for notion_taskwarrior."""
+from functools import partial
 import os
 import sys
 from typing import List
@@ -10,27 +11,24 @@ from bubop import (
     log_to_syslog,
     logger,
     loguru_tqdm_sink,
-    verbosity_int_to_std_logging_lvl,
 )
 
 from taskwarrior_syncall import inform_about_app_extras
 
 try:
-    from taskwarrior_syncall import NotionSide
+    from taskwarrior_syncall import NotionDBSide
 except ImportError:
     inform_about_app_extras(["notion"])
 
 
-from notion_client import Client  # type: ignore
+# from notion_client import Client  # type: ignore
+from notional import connect
 
 from taskwarrior_syncall import (
     Aggregator,
-    TaskWarriorSide,
     TaskWarriorCustomSide,
     __version__,
     cache_or_reuse_cached_combination,
-    convert_notion_to_tw,
-    convert_tw_to_notion,
     fetch_app_configuration,
     fetch_from_pass_manager,
     get_resolution_strategy,
@@ -39,34 +37,32 @@ from taskwarrior_syncall import (
     opt_combination,
     opt_custom_combination_savename,
     opt_list_combinations,
-    opt_notion_page_id,
     opt_notion_token_pass_path,
     opt_resolution_strategy,
-    opt_tw_project,
-    opt_tw_tags,
     report_toplevel_exception,
+    convert_custom_tw_to_notion_db,
+    convert_notion_db_to_custom_tw
+    
 )
 
 
 # CLI parsing ---------------------------------------------------------------------------------
 @click.command()
 # Notion options ------------------------------------------------------------------------------
-@opt_notion_page_id()
+# @opt_notion_page_id()
+@click.argument("todo_db_id", type=str)
+@click.argument("project_db_id", type=str)
 @opt_notion_token_pass_path()
-# taskwarrior options -------------------------------------------------------------------------
-@opt_tw_tags()
-@opt_tw_project()
 # misc options --------------------------------------------------------------------------------
 @opt_resolution_strategy()
-@opt_combination("TW", "Notion")
-@opt_list_combinations("TW", "Notion")
-@opt_custom_combination_savename("TW", "Notion")
+@opt_combination("TWCustom", "NotionDB")
+@opt_list_combinations("TWCustom", "NotionDB")
+@opt_custom_combination_savename("TWCustom", "NotionDB")
 @click.option("-v", "--verbose", count=True)
 @click.version_option(__version__)
 def main(
-    notion_page_id: str,
-    tw_tags: List[str],
-    tw_project: str,
+    todo_db_id: str,
+    project_db_id: str,
     token_pass_path: str,
     resolution_strategy: str,
     verbose: int,
@@ -84,7 +80,6 @@ def main(
     log_to_syslog(name="tw_notion_sync")
     logger.debug("Initialising...")
     inform_about_config = False
-
     if do_list_combinations:
         list_named_combinations(config_fname="tw_notion_configs")
         return 0
@@ -93,9 +88,10 @@ def main(
     check_optional_mutually_exclusive(combination_name, custom_combination_savename)
     combination_of_tw_project_tags_and_notion_page = any(
         [
-            tw_project,
-            tw_tags,
-            notion_page_id,
+            # tw_project,
+            # tw_tags,
+            todo_db_id,
+
         ]
     )
     check_optional_mutually_exclusive(
@@ -107,28 +103,22 @@ def main(
         app_config = fetch_app_configuration(
             config_fname="tw_notion_configs", combination=combination_name
         )
-        tw_tags = app_config["tw_tags"]
-        tw_project = app_config["tw_project"]
-        notion_page_id = app_config["notion_page_id"]
+        # tw_tags = app_config["tw_tags"]
+        # tw_project = app_config["tw_project"]
+        todo_db_id = app_config["todo_db_id"]
 
     # combination manually specified ----------------------------------------------------------
     else:
         inform_about_config = True
         combination_name = cache_or_reuse_cached_combination(
             config_args={
-                "notion_page_id": notion_page_id,
-                "tw_project": tw_project,
-                "tw_tags": tw_tags,
+                "todo_db_id": todo_db_id,
+                "project_db_id": project_db_id,
+                # "tw_project": tw_project,
+                # "tw_tags": tw_tags,
             },
             config_fname="tw_notion_configs",
             custom_combination_savename=custom_combination_savename,
-        )
-
-    # at least one of tw_tags, tw_project should be set ---------------------------------------
-    if not tw_tags and not tw_project:
-        raise RuntimeError(
-            "You have to provide at least one valid tag or a valid project ID to use for"
-            " the synchronization"
         )
 
     # announce configuration ------------------------------------------------------------------
@@ -136,9 +126,8 @@ def main(
         format_dict(
             header="Configuration",
             items={
-                "TW Tags": tw_tags,
-                "TW Project": tw_project,
-                "Notion Page ID": notion_page_id,
+                "Notion TODO db ID": todo_db_id,
+                "Notion Projects db ID": project_db_id,
             },
             prefix="\n\n",
             suffix="\n",
@@ -155,23 +144,28 @@ def main(
     assert token_v2
 
     # initialize taskwarrior ------------------------------------------------------------------
-    tw_side = TaskWarriorSide(tags=tw_tags, project=tw_project)
+    tw_side = TaskWarriorCustomSide(sync_value="notion")
 
     # initialize notion -----------------------------------------------------------------------
-    # client is a bit too verbose by default.
-    client_verbosity = max(verbose - 1, 0)
-    client = Client(
-        auth=token_v2, log_level=verbosity_int_to_std_logging_lvl(client_verbosity)
-    )
-    notion_side = NotionSide(client=client, page_id=notion_page_id)
+    client = connect(auth=token_v2)
+    notion_side = NotionDBSide(client=client, todo_db_id=todo_db_id, project_db_id=project_db_id)
+    project_id_to_short_name = {page.id : page.properties["ShortName"].Value
+                                for page in client.databases.query(project_db_id).execute()
+                                if page.properties["ShortName"].Value != ""}
+    convert_custom_tw_to_notion_db_partial = partial(convert_custom_tw_to_notion_db,
+                                                     project_id_to_short_name=project_id_to_short_name)
+    convert_notion_db_to_custom_tw_partial = partial(convert_notion_db_to_custom_tw,
+                                                     project_id_to_short_name=project_id_to_short_name)
+    
+
 
     # sync ------------------------------------------------------------------------------------
     try:
         with Aggregator(
             side_A=notion_side,
             side_B=tw_side,
-            converter_B_to_A=convert_tw_to_notion,
-            converter_A_to_B=convert_notion_to_tw,
+            converter_B_to_A=convert_custom_tw_to_notion_db_partial,
+            converter_A_to_B=convert_notion_db_to_custom_tw_partial,
             resolution_strategy=get_resolution_strategy(
                 resolution_strategy, side_A_type=type(notion_side), side_B_type=type(tw_side)
             ),

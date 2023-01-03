@@ -38,12 +38,14 @@ from taskwarrior_syncall.cli import (
 )
 from taskwarrior_syncall.sync_side import ItemType, SyncSide
 from taskwarrior_syncall.taskwarrior_side import TaskWarriorSide
+from taskwarrior_syncall.taskwarrior_custom_side import TaskWarriorCustomSide
 
 __all__ = [
     "Aggregator",
     "ItemType",
     "SyncSide",
     "TaskWarriorSide",
+    "TaskWarriorCustomSide",
     "app_name",
     "cache_or_reuse_cached_combination",
     "fetch_app_configuration",
@@ -91,9 +93,12 @@ except ImportError:
 # Notion --------------------------------------------------------------------------------------
 try:
     from taskwarrior_syncall.notion_side import NotionSide
+    from taskwarrior_syncall.notion_todo_db_side import NotionDBSide
     from taskwarrior_syncall.tw_notion_utils import convert_notion_to_tw, convert_tw_to_notion
+    from taskwarrior_syncall.tw_notion_db_utils import convert_custom_tw_to_notion_db, convert_notion_db_to_custom_tw
 
-    __all__.extend(["NotionSide", "convert_notion_to_tw", "convert_tw_to_notion"])
+    __all__.extend(["NotionSide", "NotionDBSide", "Notion", "convert_notion_to_tw", "convert_tw_to_notion",
+                    "convert_custom_tw_to_notion_db", "convert_notion_db_to_custom_tw"])
 except ImportError:
     pass
 

@@ -11,7 +11,8 @@ class TaskwarriorRawItem(TypedDict, total=False):
 
     Example:
 
-        {'id': 473,
+        {
+        'id': 473,
         'description': 'buenos dias',
         'entry': '20211209T083645Z',
         'modified': '20211209T190248Z',
@@ -19,7 +20,11 @@ class TaskwarriorRawItem(TypedDict, total=False):
         'status': 'pending',
         'uuid': 'a06f1c9d-237a-4692-8427-27bf6cad5ff1',
         'tags': ['test', 'test2'],
-        'urgency': 1.9})
+        'urgency': 1.9,
+        'sync': 'notion',
+        'oestimate': 'PT2H',
+        'notiontaskurl': www.notion.so/user/Buenos-Dias-8d826f589a2621728ba4f55d2d1afa18
+        }
     """
 
     id: int
@@ -35,6 +40,10 @@ class TaskwarriorRawItem(TypedDict, total=False):
     uuid: str
     tags: List[str]
     urgency: float
+    sync: str
+    oestimate: str
+    notiontaskurl: str
+
 
 
 # Item as returned from the Taskw Python API on tw.get_task(id=...)

@@ -150,7 +150,6 @@ class NotionTodoRecord(Mapping):
     def notion_properties_for_updated(cls, updated_properties):
         prop_dict = {}
         updated_properties.pop("url", None)
-        import pudb; pudb.set_trace()
         for name, content in updated_properties.items():
             if name in cls._notion_property_mapping:
                 prop_name, prop_type = cls._notion_property_mapping[name]

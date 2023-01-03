@@ -36,7 +36,6 @@ def convert_custom_tw_to_notion_db(tw_item: TwItem, project_id_to_short_name: Di
         shortn: proid for proid, shortn in project_id_to_short_name.items()
         if shortn != ""
     }
-    import pudb; pudb.set_trace()
     project_name = tw_item.get("project", None)
     project_name = project_name if project_name != "" else None
 

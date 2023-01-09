@@ -154,10 +154,13 @@ class SyncSide(abc.ABC):
                 continue
 
             if (k in item1 and k not in item2) or (k not in item1 and k in item2):
-                logger.opt(lazy=True).trace(
-                    f"Key [{k}] exists in one but not in other\n\n{item1}\n\n{item2}"
-                )
-                return False
+                if item1.get(k, None) == item2.get(k, None):
+                    continue
+                else:
+                    logger.opt(lazy=True).trace(
+                        f"Key [{k}] exists in one but not in other\n\n{item1}\n\n{item2}"
+                    )
+                    return False
 
             if isinstance(item1[k], datetime.datetime) and isinstance(
                 item2[k], datetime.datetime

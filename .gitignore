@@ -80,3 +80,7 @@ src
 a.py
 test-tw-gcal-sync.json
 /notion_config.toml
+
+test*.ipynb
+test*.py
+vandelay*

@@ -172,7 +172,7 @@ def main(
             config_fname=combination_name,
             ignore_keys=(
                 ("last_modified_date",),
-                ("due", "end", "entry", "modified", "urgency"),
+                ("end", "entry", "modified", "urgency"),
             ),
         ) as aggregator:
             aggregator.sync()

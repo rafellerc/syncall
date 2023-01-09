@@ -1,11 +1,9 @@
 import datetime
-from dataclasses import dataclass, field
-from typing import Any, List, Mapping, Optional, Sequence
+from dataclasses import dataclass
+from typing import Any, Mapping, Optional, Sequence, Union
 
-from bubop import is_same_datetime, logger, parse_datetime, pickle_dump
-from notional.orm import connected_page, Property
-
-from notional import types, schema, blocks
+from bubop import is_same_datetime, logger
+from notional import types, blocks
 
 from taskwarrior_syncall.types import (
     NotionID,
@@ -34,6 +32,13 @@ def get_content_from_notion_block(block):
         return block.Value
     elif isinstance(block, types.Status):
         return block.Value
+    elif isinstance(block, types.Date):
+        if type(block.Start) == datetime.date:
+            start = datetime.datetime.combine(block.Start,
+                                              datetime.datetime.min.time(),
+                                              tzinfo=datetime.timezone(datetime.timedelta(hours=-3)))
+            return start
+        return block.Start
     else:
         raise Exception("Type: {} not supported".format(type(block)))
 
@@ -55,9 +60,21 @@ def get_property_from_content(content, notion_type):
     elif notion_type == types.Relation:
         content = content if content is not None else []
         return types.Relation.__compose__(content)
+    elif notion_type == types.Date:
+        assert isinstance(content, datetime.datetime) or content is None
+        content = content.astimezone() if content else None
+        return types.Date.__compose__(content)
     else:
         raise Exception(f"Type: {notion_type} not supported") 
 
+
+def valid_tw_duration(durat: Union[str, None]) -> bool:
+    if durat is None:
+        return True
+    elif "P" not in durat or "T" not in durat:
+        return False
+    else:
+        return True
 
 @dataclass
 class NotionTodoRecord(Mapping):
@@ -67,6 +84,7 @@ class NotionTodoRecord(Mapping):
     # tags: Optional[Sequence[str]] = field(default_factory=list)
     estimated_time: Optional[str] = None
     status: Optional[str] = None
+    due_date: Optional[datetime.datetime] = None
     url: Optional[str] = None
     id: Optional[NotionID] = None
     
@@ -76,13 +94,14 @@ class NotionTodoRecord(Mapping):
         "description",
         "project_id",
         # "tags",
+        "due_date",
         "status",
         "url",
         "estimated_time",
 
     }
 
-    _date_key_names = {"last_modified_date"}
+    _date_key_names = {"last_modified_date", "due_date"}
 
     _list_key_names = {
         # "tags"
@@ -94,6 +113,7 @@ class NotionTodoRecord(Mapping):
         # tags = ("Tags", types.MultiSelect),
         estimated_time = ("EstimatedTime", types.RichText),
         status = ("Status", types.Status),
+        due_date = ("DueDate", types.Date)
 
     )
 
@@ -103,7 +123,11 @@ class NotionTodoRecord(Mapping):
             if key in ignore_keys:
                 continue
             elif key in self._date_key_names:
-                if not is_same_datetime(
+                if bool(self[key]) !=  bool(other[key]):
+                    return False
+                elif (self[key] is None) and (other[key] is None):
+                    continue
+                elif not is_same_datetime(
                     self[key], other[key], tol=datetime.timedelta(minutes=10)
                 ):
                     logger.opt(lazy=True).trace(
@@ -135,15 +159,23 @@ class NotionTodoRecord(Mapping):
     def from_record(cls, record: blocks.Page):
         project_ids = [pro.id for pro in record.properties["Project"].relation]
         project_id = project_ids[0] if len(project_ids) > 0 else None
+        description = get_content_from_notion_block(record.properties["Description"])
+        oestimate = get_content_from_notion_block(record.properties["EstimatedTime"])
+        # Clean oestimate
+        if oestimate == "":
+            oestimate = None
+        if not valid_tw_duration(oestimate):
+            raise Exception(f"Invalid oestimate: {oestimate} | in id <{record.id}> description <{description}>")
         return cls(
             last_modified_date = record.last_edited_time,
-            description = get_content_from_notion_block(record.properties["Description"]),
+            description = description,
             project_id = project_id,
             # tags = get_content_from_notion_block(record.properties["Tags"]),
-            estimated_time = get_content_from_notion_block(record.properties["EstimatedTime"]),
+            estimated_time = oestimate,
             id = record.id,
             url = record.url,
-            status = get_content_from_notion_block(record.properties["Status"])
+            status = get_content_from_notion_block(record.properties["Status"]),
+            due_date = get_content_from_notion_block(record.properties["DueDate"]),
         )
 
     @classmethod

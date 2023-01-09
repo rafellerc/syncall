@@ -41,13 +41,15 @@ def convert_custom_tw_to_notion_db(tw_item: TwItem, project_id_to_short_name: Di
 
     project_id = short_name_to_project_id.get(project_name, None)
 
+    assert isinstance(tw_item.get("due", None), datetime.datetime) or tw_item.get("due", None) is None
     return NotionTodoRecord(
         last_modified_date=dt,
         description=tw_item["description"],
         project_id=project_id,
         # tags=tw_item.get("tags", []),
         status=TW_STATUSES_TO_NOTION[tw_item.get("status")],
-        estimated_time=tw_item.get("oestimate", None)
+        estimated_time=tw_item.get("oestimate", None),
+        due_date=tw_item["due"] if tw_item.get("due", False) else None
     )
 
 
@@ -61,5 +63,6 @@ def convert_notion_db_to_custom_tw(todo_record: NotionTodoRecord, project_id_to_
         "modified": format_datetime_tz(todo_record.last_modified_date),
         "notiontaskurl": todo_record.url,
         "project": project_id_to_short_name.get(todo_record.project_id, ""),
-        "sync": "notion"
+        "sync": "notion",
+        "due": todo_record.due_date if todo_record.due_date else None
     }
